@@ -25,14 +25,14 @@ const UI = {
   choose(options, { prompt = null, cancelable = true, columns = 1 } = {}) {
     const box = $('#choices');
     box.innerHTML = '';
-    box.style.gridTemplateColumns = `repeat(${columns}, 1fr)`;
+    box.style.gridTemplateColumns = `repeat(${columns}, minmax(0, 1fr))`;
     if (prompt) { const tb = $('#textbox'); tb.textContent = prompt; tb.classList.remove('hidden', 'waiting'); }
     const items = options.map((o, i) => {
       const opt = typeof o === 'string' ? { label: o } : o;
       const b = document.createElement('button');
       b.className = 'choice';
-      b.innerHTML = `<span class="num">${i + 1}</span>${opt.label}${opt.sub ? `<small>${opt.sub}</small>` : ''}`;
-      if (opt.color) b.style.borderLeftColor = opt.color;
+      b.innerHTML = `${opt.icon ? `<img class="icon" src="${opt.icon}" alt="">` : ''}<span class="txt"><span class="num">${i + 1}</span>${opt.label}${opt.sub ? `<small>${opt.sub}</small>` : ''}</span>`;
+      if (opt.fill) { b.classList.add('filled'); b.style.setProperty('--fill', opt.fill); } // type-colored buttons
       b.disabled = !!opt.disabled;
       b.onclick = () => UI._pick(i);
       box.appendChild(b);

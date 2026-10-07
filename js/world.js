@@ -8,9 +8,8 @@ const T = {
 };
 const BLOCKED = new Set([T.DEEP, T.WATER, T.TREE, T.PINE, T.MOUNTAIN, T.CACTUS, T.CENTER, T.MART, T.LEADER]);
 
-// Chance per step of a wild encounter, by tile. Tall grass is the classic hotspot;
-// open desert/snow/beach/hills still have occasional encounters so every biome is "alive".
-const ENCOUNTER_RATE = { [T.TALL]: 0.12, [T.FROST]: 0.12, [T.DESERT]: 0.04, [T.SNOW]: 0.03, [T.SAND]: 0.04, [T.HILL]: 0.05 };
+// How likely a wild Pokémon spawns on a tile type. Tall grass is the hotspot, open ground is sparser.
+const SPAWN_WEIGHT = { [T.TALL]: 1, [T.FROST]: 1, [T.DESERT]: 0.35, [T.SNOW]: 0.3, [T.SAND]: 0.4, [T.HILL]: 0.4, [T.GRASS]: 0.15, [T.FLOWER]: 0.15 };
 
 function generateWorld(seed) {
   const N = WORLD_W * WORLD_H;
@@ -127,7 +126,56 @@ function generateWorld(seed) {
     }
   }
 
-  return { seed, tiles, biome, towns, doors, leaders };
+  // --- Heights for the 3D terrain. Piecewise map from elevation so shorelines sit at y=0,
+  // plains roll gently, hills rise, and mountains tower. Water surface is y = 0.
+  const hgt = new Float32Array(N);
+  const top = pct(0.999);
+  const lerp = (a, b, t) => a + (b - a) * Math.max(0, Math.min(1, t));
+  for (let i = 0; i < N; i++) {
+    const e = elevAt[i];
+    let h;
+    if (e < L.water) h = Math.max(-3, -0.5 - ((L.water - e) / (L.water - L.deep)) * 1.5);
+    else if (e < L.sand) h = lerp(0.02, 0.3, (e - L.water) / (L.sand - L.water));
+    else if (e < L.hill) h = lerp(0.3, 1.8, (e - L.sand) / (L.hill - L.sand));
+    else if (e < L.mount) h = lerp(1.8, 3.4, (e - L.hill) / (L.mount - L.hill));
+    else h = lerp(3.4, 13, (e - L.mount) / (top - L.mount));
+    if (tiles[i] === T.PATH) h = Math.min(h, 3.0); // roads cut passes through mountains
+    hgt[i] = h;
+  }
+  for (const t of towns) { // flatten each town into a plaza
+    let sum = 0, n = 0;
+    for (let dy = -5; dy <= 5; dy++) for (let dx = -6; dx <= 6; dx++) { sum += Math.max(0.3, hgt[idx(t.x + dx, t.y + dy)]); n++; }
+    t.h = Math.min(2.5, sum / n);
+    for (let dy = -6; dy <= 6; dy++) for (let dx = -7; dx <= 7; dx++) {
+      const i = idx(t.x + dx, t.y + dy);
+      hgt[i] = Math.abs(dx) <= 6 && Math.abs(dy) <= 5 ? t.h : (hgt[i] + t.h) / 2; // soft rim
+    }
+  }
+  // Corner heights (tile corners) = average of the 4 touching tiles -> smooth mesh + smooth walking.
+  const CW = WORLD_W + 1;
+  const corner = new Float32Array(CW * (WORLD_H + 1));
+  for (let y = 0; y <= WORLD_H; y++) for (let x = 0; x <= WORLD_W; x++) {
+    let sum = 0, n = 0;
+    for (const [dx, dy] of [[-1, -1], [0, -1], [-1, 0], [0, 0]]) {
+      const tx = x + dx, ty = y + dy;
+      if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) { sum += -3; n++; continue; }
+      sum += hgt[idx(tx, ty)]; n++;
+    }
+    corner[y * CW + x] = sum / n;
+  }
+
+  return { seed, tiles, biome, towns, doors, leaders, hgt, corner };
+}
+
+const BRIDGE_Y = 0.45;
+// Ground height at a continuous position (tile x covers [x, x+1]). Bilinear over tile corners.
+function heightAt(w, px, pz) {
+  const x = Math.max(0, Math.min(WORLD_W - 0.001, px)), z = Math.max(0, Math.min(WORLD_H - 0.001, pz));
+  const x0 = Math.floor(x), z0 = Math.floor(z), fx = x - x0, fz = z - z0, CW = WORLD_W + 1;
+  const c = w.corner;
+  const h = (c[z0 * CW + x0] * (1 - fx) + c[z0 * CW + x0 + 1] * fx) * (1 - fz) +
+            (c[(z0 + 1) * CW + x0] * (1 - fx) + c[(z0 + 1) * CW + x0 + 1] * fx) * fz;
+  return tileAt(w, x0, z0) === T.BRIDGE ? Math.max(h, BRIDGE_Y) : h;
 }
 
 function tileAt(w, x, y) {
@@ -140,108 +188,13 @@ function townAt(w, x, y) {
   return w.towns.find((t) => Math.abs(t.x - x) <= 6 && Math.abs(t.y - y) <= 5) || null;
 }
 
-// Base colors, also used for the minimap.
+// Base colors for the minimap and the 3D terrain.
 const TILE_COLORS = {
   [T.DEEP]: '#1d4e89', [T.WATER]: '#2f7fc1', [T.SAND]: '#e8d8a0', [T.GRASS]: '#6abe5a', [T.TALL]: '#3f9a3a',
   [T.TREE]: '#2d6e2d', [T.MOUNTAIN]: '#6e6058', [T.HILL]: '#a89a78', [T.SNOW]: '#eef4f8', [T.FROST]: '#cfe6f0',
   [T.DESERT]: '#e6c27a', [T.CACTUS]: '#e6c27a', [T.PATH]: '#c9a96b', [T.BRIDGE]: '#9a6a3a', [T.FLOOR]: '#d8c8a8',
   [T.FLOWER]: '#6abe5a', [T.CENTER]: '#d84040', [T.MART]: '#4060d0', [T.DOOR]: '#5a3a20', [T.LEADER]: '#d8c8a8', [T.PINE]: '#eef4f8',
 };
-
-// Draws one tile at screen position (sx, sy). `time` animates water and grass sway.
-function drawTile(ctx, w, x, y, sx, sy, S, time) {
-  const t = tileAt(w, x, y);
-  const h = hash2(x, y, 99);
-  const fill = (c, ox = 0, oy = 0, ww = S, hh = S) => { ctx.fillStyle = c; ctx.fillRect(sx + ox, sy + oy, ww, hh); };
-  const ground = (c) => { fill(c); if (h < 0.3) { ctx.fillStyle = 'rgba(0,0,0,0.05)'; ctx.fillRect(sx + h * S * 2, sy + h * S * 3 % S, 3, 3); } };
-
-  switch (t) {
-    case T.DEEP: case T.WATER: {
-      fill(TILE_COLORS[t]);
-      // Moving highlight lines fake waves.
-      const wave = Math.sin(time / 600 + x * 0.7 + y * 0.4);
-      ctx.fillStyle = 'rgba(255,255,255,0.18)';
-      ctx.fillRect(sx + S * 0.2 + wave * 3, sy + S * (0.3 + h * 0.4), S * 0.35, 2);
-      break;
-    }
-    case T.SAND: ground(TILE_COLORS[t]); break;
-    case T.DESERT: ground(TILE_COLORS[t]); if (h > 0.85) { fill('#d4ac60', S * 0.3, S * 0.6, S * 0.4, 2); } break;
-    case T.GRASS: ground(TILE_COLORS[t]); break;
-    case T.FLOOR: fill(TILE_COLORS[t]); ctx.strokeStyle = 'rgba(0,0,0,0.06)'; ctx.strokeRect(sx + 0.5, sy + 0.5, S - 1, S - 1); break;
-    case T.PATH: ground(TILE_COLORS[t]); break;
-    case T.HILL: ground(TILE_COLORS[t]); if (h > 0.7) { fill('#8a7c60', S * h * 0.6, S * 0.5, 5, 4); } break;
-    case T.SNOW: ground(TILE_COLORS[t]); break;
-    case T.FLOWER: {
-      fill(TILE_COLORS[T.GRASS]);
-      const colors = ['#ff6b8a', '#ffd84a', '#ffffff', '#b07aff'];
-      for (let k = 0; k < 3; k++) {
-        ctx.fillStyle = colors[(Math.floor(h * 10) + k) % 4];
-        ctx.fillRect(sx + ((h * 97 * (k + 1)) % 0.8) * S + 2, sy + ((h * 53 * (k + 1)) % 0.8) * S + 2, 4, 4);
-      }
-      break;
-    }
-    case T.TALL: case T.FROST: {
-      fill(t === T.TALL ? '#4fa844' : '#e2eef4');
-      ctx.fillStyle = t === T.TALL ? '#2f7a2c' : '#8ec0d8';
-      const sway = Math.sin(time / 400 + x + y) * 1.5;
-      for (let k = 0; k < 4; k++) {
-        const bx = sx + 3 + k * (S / 4.2), by = sy + S * (k % 2 ? 0.25 : 0.55);
-        ctx.beginPath(); ctx.moveTo(bx, by + S * 0.4); ctx.lineTo(bx + 3 + sway, by); ctx.lineTo(bx + 6, by + S * 0.4); ctx.fill();
-      }
-      break;
-    }
-    case T.TREE: case T.PINE: {
-      fill(t === T.TREE ? TILE_COLORS[T.GRASS] : TILE_COLORS[T.SNOW]);
-      fill('#6a4a2a', S * 0.42, S * 0.6, S * 0.16, S * 0.35);
-      ctx.fillStyle = t === T.TREE ? (h > 0.5 ? '#2d6e2d' : '#357a32') : '#2a5a48';
-      ctx.beginPath();
-      if (t === T.TREE) ctx.arc(sx + S / 2, sy + S * 0.42, S * 0.4, 0, Math.PI * 2);
-      else { ctx.moveTo(sx + S / 2, sy + 1); ctx.lineTo(sx + S * 0.88, sy + S * 0.72); ctx.lineTo(sx + S * 0.12, sy + S * 0.72); }
-      ctx.fill();
-      ctx.fillStyle = 'rgba(255,255,255,0.12)';
-      ctx.beginPath(); ctx.arc(sx + S * 0.38, sy + S * 0.32, S * 0.12, 0, Math.PI * 2); ctx.fill();
-      break;
-    }
-    case T.CACTUS:
-      fill(TILE_COLORS[T.DESERT]);
-      fill('#3a8a3a', S * 0.42, S * 0.15, S * 0.16, S * 0.75);
-      fill('#3a8a3a', S * 0.22, S * 0.35, S * 0.12, S * 0.25);
-      fill('#3a8a3a', S * 0.66, S * 0.28, S * 0.12, S * 0.25);
-      break;
-    case T.MOUNTAIN: {
-      fill(TILE_COLORS[T.HILL]);
-      const snowy = y < WORLD_H * 0.35;
-      ctx.fillStyle = h > 0.5 ? '#6e6058' : '#5e524a';
-      ctx.beginPath(); ctx.moveTo(sx, sy + S); ctx.lineTo(sx + S / 2, sy + 2); ctx.lineTo(sx + S, sy + S); ctx.fill();
-      ctx.fillStyle = snowy ? '#ffffff' : '#8a7c70';
-      ctx.beginPath(); ctx.moveTo(sx + S * 0.36, sy + S * 0.3); ctx.lineTo(sx + S / 2, sy + 2); ctx.lineTo(sx + S * 0.64, sy + S * 0.3); ctx.fill();
-      break;
-    }
-    case T.BRIDGE:
-      fill(TILE_COLORS[T.WATER]);
-      fill('#9a6a3a', 0, 2, S, S - 4);
-      ctx.fillStyle = '#7a5028';
-      for (let k = 0; k < 4; k++) ctx.fillRect(sx + k * (S / 4), sy + 2, 1, S - 4);
-      break;
-    case T.CENTER: case T.MART: {
-      // Top row of a building = roof, bottom row = wall with windows.
-      const roof = tileAt(w, x, y - 1) !== t;
-      if (roof) { fill(t === T.CENTER ? '#d84040' : '#4060d0'); fill('rgba(0,0,0,0.15)', 0, S - 4, S, 4); }
-      else { fill('#f4ecdc'); fill('#88b8e0', S * 0.3, S * 0.25, S * 0.4, S * 0.3); }
-      break;
-    }
-    case T.DOOR: {
-      fill('#f4ecdc');
-      fill('#5a3a20', S * 0.2, 0, S * 0.6, S * 0.85);
-      const isCenter = w.doors[`${x},${y}`]?.kind === 'center';
-      ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.floor(S * 0.4)}px sans-serif`; ctx.textAlign = 'center';
-      ctx.fillText(isCenter ? '+' : '$', sx + S / 2, sy + S * 0.6);
-      break;
-    }
-    case T.LEADER: fill(TILE_COLORS[T.FLOOR]); break; // NPC drawn separately on top
-    default: fill('#f0f');
-  }
-}
 
 // Pre-render the whole map at 1px per tile for the minimap.
 function renderMinimap(w) {
