@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Pocket Wilds</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <canvas id="world"></canvas>
+
+  <div id="hud" class="hidden">
+    <div id="hud-loc"></div>
+    <div id="hud-info"></div>
+  </div>
+  <canvas id="minimap" class="hidden" width="256" height="256"></canvas>
+  <div id="toast" class="hidden"></div>
+
+  <div id="battle" class="hidden">
+    <div class="ground foe-ground"></div>
+    <div class="ground my-ground"></div>
+    <div id="foe-panel" class="panel">
+      <div class="row"><span class="name"></span><span class="lvl"></span></div>
+      <div class="types"></div>
+      <div class="bar hp"><div class="fill"></div></div>
+    </div>
+    <canvas id="foe-sprite" width="220" height="220"></canvas>
+    <canvas id="my-sprite" width="240" height="240"></canvas>
+    <div id="my-panel" class="panel">
+      <div class="row"><span class="name"></span><span class="lvl"></span></div>
+      <div class="types"></div>
+      <div class="bar hp"><div class="fill"></div></div>
+      <div class="hptext"></div>
+      <div class="bar exp"><div class="fill"></div></div>
+    </div>
+  </div>
+
+  <div id="title">
+    <h1>Pocket Wilds</h1>
+    <p class="tag">An open-world creature-catching adventure</p>
+    <div id="title-buttons"></div>
+    <label class="seed">World seed (optional) <input id="seed" placeholder="random"></label>
+    <p class="help">Arrows/WASD move · Shift run · Enter talk · Esc menu · M map</p>
+  </div>
+
+  <div id="textbox" class="hidden"></div>
+  <div id="choices" class="hidden"></div>
+
+  <div id="touch">
+    <div class="dpad">
+      <button data-dir="up">&#9650;</button>
+      <button data-dir="left">&#9664;</button>
+      <button data-dir="right">&#9654;</button>
+      <button data-dir="down">&#9660;</button>
+    </div>
+    <div class="ab">
+      <button data-btn="b">B</button>
+      <button data-btn="a">A</button>
+    </div>
+  </div>
+
+  <script src="js/rng.js"></script>
+  <script src="js/data.js"></script>
+  <script src="js/monster.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/sprites.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/battle.js"></script>
+  <script src="js/game.js"></script>
+</body>
+</html>
