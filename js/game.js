@@ -499,7 +499,8 @@ function setupTitle() {
   const ng = document.createElement('button');
   ng.textContent = 'New Game';
   ng.onclick = () => {
-    if (save && !confirm('Start over? Your current save will be replaced.')) return;
+    // Ask twice in-page instead of confirm(): some hosts block browser dialogs.
+    if (save && !ng.dataset.armed) { ng.dataset.armed = '1'; ng.textContent = 'Tap again to erase your save'; return; }
     const raw = $('#seed').value.trim();
     // Any text works as a seed: numbers directly, words get hashed.
     const seed = raw ? (/^\d+$/.test(raw) ? +raw : [...raw].reduce((h, c) => (Math.imul(h, 31) + c.charCodeAt(0)) | 0, 7)) : Math.floor(Math.random() * 1e9);

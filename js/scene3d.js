@@ -14,6 +14,12 @@ const pokeImg = {
   back5: (m) => `${SPRITE_BASE}/other/showdown/back/${m.shiny ? 'shiny/' : ''}${SPECIES[m.species].dex}.gif`,
   pixel: (m) => `${SPRITE_BASE}/${SPECIES[m.species].dex}.png`,
 };
+// Hosts that block outside images (e.g. a Claude artifact) set window.LOCAL_SPRITES and ship
+// HOME renders in sprites/. Every slot then uses the bundled file.
+if (window.LOCAL_SPRITES) {
+  const local = (m) => `sprites/${m.shiny ? 'shiny/' : ''}${SPECIES[m.species].dex}.png`;
+  for (const k of Object.keys(pokeImg)) pokeImg[k] = local;
+}
 
 const W3 = {
   renderer: null, scene: null, camera: null, sun: null, hemi: null, sky: null, stars: null, clouds: null,
